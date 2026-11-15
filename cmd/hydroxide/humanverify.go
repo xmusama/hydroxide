@@ -236,9 +236,21 @@ func askHumanVerification(c *protonmail.Client, details *protonmail.HumanVerific
 		tokens:    make(chan string, 1),
 	}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var ln net.Listener
+	listenAddr := "0.0.0.0:8765"
+	if addr := os.Getenv("HYDROXIDE_VERIFY_ADDR"); addr != "" {
+		listenAddr = addr
+	} else if port := os.Getenv("HYDROXIDE_VERIFY_PORT"); port != "" {
+		listenAddr = "0.0.0.0:" + port
+	}
+
+	ln, err = net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen for human verification: %v", err)
+		// Fallback to any available port if preferred port is already bound
+		ln, err = net.Listen("tcp", "0.0.0.0:0")
+		if err != nil {
+			return fmt.Errorf("failed to listen for human verification: %v", err)
+		}
 	}
 	defer ln.Close()
 
@@ -248,9 +260,15 @@ func askHumanVerification(c *protonmail.Client, details *protonmail.HumanVerific
 		}
 	}()
 
+	port := ""
+	if tcpAddr, ok := ln.Addr().(*net.TCPAddr); ok {
+		port = fmt.Sprintf("%d", tcpAddr.Port)
+	}
+
 	fmt.Fprintf(os.Stderr, "ProtonMail requires human verification.\n")
 	fmt.Fprintf(os.Stderr, "Open the following URL in a web browser and complete the CAPTCHA:\n\n")
-	fmt.Fprintf(os.Stderr, "\thttp://%v/\n\n", ln.Addr())
+	fmt.Fprintf(os.Stderr, "\thttp://127.0.0.1:%s/\n", port)
+	fmt.Fprintf(os.Stderr, "Or if accessing remotely:\n\thttp://<server-ip>:%s/\n\n", port)
 	fmt.Fprintf(os.Stderr, "Waiting for the CAPTCHA to be completed (paste a verification token and press Enter instead, if needed)...\n")
 
 	// Let the user paste a token themselves, in case the browser can't reach
